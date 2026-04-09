@@ -5,6 +5,7 @@ import {
   cleanupWorktree,
   prepareWorktreeForTicket,
 } from "../utils/git-worktree.js";
+import { runImplementationTask } from "./claude-agent.service.js";
 
 export class TicketProcessor {
   async process(run: Run, context: StoryContext): Promise<void> {
@@ -24,17 +25,25 @@ export class TicketProcessor {
       ));
       console.log(`${tag} worktree ready branch=${branchName}`);
 
-      // TODO: fetch full story from Shortcut API
-      // TODO: call Claude to generate code change inside worktreePath
-      // TODO: commit changes, open PR
-      // TODO: post comment back to Shortcut story
-      console.log(`${tag} processing not yet implemented`);
+      // Step 2: run Claude agent inside the worktree.
+      const result = await runImplementationTask({
+        title: context.name,
+        description: context.description,
+        worktreePath,
+        branchName,
+      });
+
+      const status = result.outcome === "error" ? "failed" : "completed";
 
       saveRunResult(run.id, {
-        summary: "Worktree prepared; full processing not yet implemented",
-        status: "completed",
+        summary: result.summary,
+        error_message: result.outcome === "error" ? result.summary : undefined,
+        status,
       });
-      console.log(`${tag} completed`);
+
+      console.log(`${tag} ${status} — ${result.summary}`);
+
+      // TODO: if outcome === "success", open PR and post comment to Shortcut story.
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`${tag} failed — ${message}`);
@@ -43,7 +52,7 @@ export class TicketProcessor {
         status: "failed",
       });
     } finally {
-      // Always clean up the worktree, even on failure.
+      // Always clean up the worktree.
       if (branchName && worktreePath) {
         cleanupWorktree(worktreePath, branchName);
       }
