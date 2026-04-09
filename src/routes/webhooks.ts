@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
-import { handleShortcutWebhook } from "../services/shortcut-webhook.service.js";
+import { enqueueShortcutWebhook } from "../services/shortcut-webhook.service.js";
 import type { ShortcutWebhookPayload } from "../types/shortcut.js";
 
 const router = Router();
@@ -16,12 +16,14 @@ router.post("/webhooks/shortcut", async (req: Request, res: Response) => {
     `[webhook] shortcut event=${eventType} storyId=${storyId ?? "n/a"} hasStory=${storyAction != null}`,
   );
 
-  // Delegate — fire-and-forget intentional at this stage.
-  handleShortcutWebhook(payload).catch((err) =>
-    console.error("[webhook] unhandled error in shortcut handler:", err),
-  );
+  const result = await enqueueShortcutWebhook(payload);
 
-  res.json({ received: true });
+  if (result.skipped) {
+    res.json({ received: true, skipped: true, reason: result.reason });
+    return;
+  }
+
+  res.json({ received: true, runId: result.runId });
 });
 
 export default router;
