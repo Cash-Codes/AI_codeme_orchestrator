@@ -14,6 +14,7 @@
     "lint": "biome check --write src"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.97",
     "better-sqlite3": "^11.0.0",
     "dotenv": "^16.6.1",
     "drizzle-orm": "^0.30.8",
