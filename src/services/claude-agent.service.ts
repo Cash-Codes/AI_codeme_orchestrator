@@ -2,24 +2,24 @@
  * Claude Agent Service
  *
  * Integrates the Anthropic Claude Agent SDK to run implementation tasks
- * inside an isolated git worktree. The Agent SDK uses the ANTHROPIC_API_KEY
- * environment variable automatically — no explicit key passing needed here.
- * The key is loaded from config/env.ts at server startup and validated there.
+ * inside an isolated git worktree. The Agent SDK reads ANTHROPIC_API_KEY
+ * from process.env automatically — the key is validated at server startup
+ * in src/config/env.ts, so by the time this service is called it is present.
  *
- * The Agent SDK gives Claude built-in file/shell tools so it can:
- *   - Read and explore the codebase (Read, Glob, Grep)
- *   - Run validation commands: tests, lint, type-check (Bash)
- *   - Create or edit files (Write, Edit)
- *
- * Swap strategy: if you later want to run Claude Code CLI as a subprocess
- * instead of the SDK, replace runImplementationTask() with a child_process
- * call and parse stdout. The AgentResult interface stays the same.
+ * Swap strategy: to run Claude Code CLI as a subprocess instead of the SDK,
+ * replace runImplementationTask() with a child_process.execFile() call and
+ * parse stdout. AgentResult and ImplementationTaskInput stay the same.
  */
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import type { AgentOutput } from "../utils/prompts/implementation.js";
+import {
+  buildImplementationPrompt,
+  parseAgentOutput,
+} from "../utils/prompts/implementation.js";
 
 // ---------------------------------------------------------------------------
-// Interface — stable contract regardless of backend (SDK vs CLI)
+// Public interface — stable contract regardless of backend (SDK vs CLI)
 // ---------------------------------------------------------------------------
 
 export interface ImplementationTaskInput {
@@ -31,113 +31,23 @@ export interface ImplementationTaskInput {
   acceptanceCriteria?: string;
   /** Absolute path to the isolated worktree where changes should be made */
   worktreePath: string;
-  /** Branch already created in the worktree (for logging / commit message) */
+  /** Branch already created in the worktree */
   branchName: string;
+  /** Override for the build command (defaults to npm run build) */
+  buildCmd?: string;
+  /** Override for the lint command (defaults to npm run lint) */
+  lintCmd?: string;
 }
 
 export interface AgentResult {
-  /** Short machine-readable outcome: "success" | "no_changes" | "error" */
-  outcome: "success" | "no_changes" | "error";
+  /** Machine-readable outcome */
+  outcome: AgentOutput["outcome"];
   /** Human-readable summary of what was done */
   summary: string;
-  /** Full agent output text for debugging */
+  /** Structured output from Claude if parsing succeeded */
+  structured?: AgentOutput;
+  /** Full raw agent output for debugging */
   rawOutput: string;
-}
-
-// ---------------------------------------------------------------------------
-// Prompt builder — pure function, easy to test
-// ---------------------------------------------------------------------------
-
-export function buildTaskPrompt(input: ImplementationTaskInput): string {
-  const criteria = input.acceptanceCriteria
-    ? `\n\n**Acceptance Criteria:**\n${input.acceptanceCriteria}`
-    : "";
-
-  return `You are an AI software engineer implementing a code change inside a git worktree.
-Your working directory is the project root of this repository.
-You are on branch: ${input.branchName}
-
----
-
-## Ticket
-
-**Title:** ${input.title}
-
-**Description:**
-${input.description}${criteria}
-
----
-
-## Your Task
-
-Work through these steps in order:
-
-1. **Analyse the ticket.** Understand what change is needed. Read relevant files. Identify the minimal set of files to touch.
-
-2. **Inspect the codebase.** Use Read, Glob, and Grep to find the right locations. Do not guess file paths.
-
-3. **Make the minimum correct change.** Edit or create only what the ticket requires. No refactoring beyond scope. No speculative improvements.
-
-4. **Run validation.** After making changes, run the relevant commands (type-check, lint, existing tests if any). Fix any errors before finishing.
-
-5. **Commit your work.** Stage and commit all changed files with a clear commit message that references the ticket title.
-
-6. **Produce a summary.** Output a JSON block as your final message using this exact format:
-
-\`\`\`json
-{
-  "outcome": "success" | "no_changes" | "error",
-  "summary": "<one or two sentences describing what was done or why nothing changed>"
-}
-\`\`\`
-
-Do not output the JSON block until all work is complete.
-
----
-
-## Rules
-
-- Work only inside the current working directory.
-- Do not push to remote or open PRs — that is handled externally.
-- If the ticket is ambiguous or you cannot determine the correct change, set outcome to "error" and explain in the summary.
-- If the codebase already satisfies the ticket requirements with no changes needed, set outcome to "no_changes".
-`;
-}
-
-// ---------------------------------------------------------------------------
-// Result parser — extracts the JSON block from agent output
-// ---------------------------------------------------------------------------
-
-function parseAgentOutput(rawOutput: string): Pick<AgentResult, "outcome" | "summary"> {
-  const match = rawOutput.match(/```json\s*([\s\S]*?)```/);
-  if (!match) {
-    return {
-      outcome: "error",
-      summary: "Agent did not produce a structured JSON result block.",
-    };
-  }
-
-  try {
-    const parsed = JSON.parse(match[1]) as {
-      outcome?: string;
-      summary?: string;
-    };
-
-    const outcome =
-      parsed.outcome === "success" || parsed.outcome === "no_changes"
-        ? (parsed.outcome as "success" | "no_changes")
-        : "error";
-
-    return {
-      outcome,
-      summary: parsed.summary ?? "No summary provided.",
-    };
-  } catch {
-    return {
-      outcome: "error",
-      summary: "Agent produced a malformed JSON result block.",
-    };
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -147,14 +57,21 @@ function parseAgentOutput(rawOutput: string): Pick<AgentResult, "outcome" | "sum
 /**
  * Runs a Claude agent to implement the ticket inside the given worktree.
  *
- * The ANTHROPIC_API_KEY is read by the Agent SDK from process.env automatically.
- * It is validated at server startup in src/config/env.ts — if it's missing the
- * server will refuse to start before this function is ever called.
+ * ANTHROPIC_API_KEY is consumed by the Agent SDK from process.env.
+ * It is validated at server startup — if missing the server refuses to start.
  */
 export async function runImplementationTask(
   input: ImplementationTaskInput,
 ): Promise<AgentResult> {
-  const prompt = buildTaskPrompt(input);
+  const prompt = buildImplementationPrompt({
+    title: input.title,
+    description: input.description,
+    acceptanceCriteria: input.acceptanceCriteria,
+    branchName: input.branchName,
+    buildCmd: input.buildCmd,
+    lintCmd: input.lintCmd,
+  });
+
   const outputChunks: string[] = [];
 
   console.log(
@@ -167,22 +84,36 @@ export async function runImplementationTask(
       options: {
         cwd: input.worktreePath,
         // ANTHROPIC_API_KEY is consumed here by the Agent SDK from process.env.
-        allowedTools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash"],
+        tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash"],
         permissionMode: "acceptEdits",
-        maxTurns: 30,
+        maxTurns: 40,
       },
     })) {
       if ("result" in message) {
+        // Surface SDK-level errors reported in the result message.
+        if ("errors" in message && Array.isArray(message.errors) && message.errors.length > 0) {
+          const errorDetail = (message.errors as unknown[])
+            .map((e) => (typeof e === "object" && e !== null && "message" in e ? (e as { message: string }).message : String(e)))
+            .join("; ");
+          console.error(`[claude-agent] SDK result errors: ${errorDetail}`);
+          return {
+            outcome: "error",
+            summary: `Agent SDK reported errors: ${errorDetail}`,
+            rawOutput: outputChunks.join("\n"),
+          };
+        }
         outputChunks.push(message.result);
-        console.log(`[claude-agent] agent result received (${message.result.length} chars)`);
+        console.log(
+          `[claude-agent] result received (${message.result.length} chars)`,
+        );
       }
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`[claude-agent] SDK error: ${message}`);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[claude-agent] SDK error: ${msg}`);
     return {
       outcome: "error",
-      summary: `Agent SDK error: ${message}`,
+      summary: `Agent SDK error: ${msg}`,
       rawOutput: outputChunks.join("\n"),
     };
   }
@@ -190,9 +121,35 @@ export async function runImplementationTask(
   const rawOutput = outputChunks.join("\n");
   const parsed = parseAgentOutput(rawOutput);
 
+  if (!parsed.ok) {
+    console.warn(`[claude-agent] could not parse structured output: ${parsed.reason}`);
+    return {
+      outcome: "error",
+      summary: `Agent completed but output could not be parsed: ${parsed.reason}`,
+      rawOutput,
+    };
+  }
+
+  const { data } = parsed;
+
+  const validationSummary = data.validation
+    .map((v) => `${v.passed ? "✓" : "✗"} ${v.command}${v.notes ? ` (${v.notes})` : ""}`)
+    .join(", ");
+
   console.log(
-    `[claude-agent] finished outcome=${parsed.outcome} summary="${parsed.summary}"`,
+    `[claude-agent] finished outcome=${data.outcome} files=${data.files_changed.length} validation=[${validationSummary}]`,
   );
 
-  return { ...parsed, rawOutput };
+  if (data.open_questions.length > 0) {
+    console.warn(
+      `[claude-agent] open questions: ${data.open_questions.join(" | ")}`,
+    );
+  }
+
+  return {
+    outcome: data.outcome,
+    summary: data.summary,
+    structured: data,
+    rawOutput,
+  };
 }

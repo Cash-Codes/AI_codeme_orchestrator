@@ -13,6 +13,7 @@ export interface ShortcutAction {
   entity_type: string; // "story" | "epic" | "workflow-state" | ...
   action: "create" | "update" | "delete";
   name?: string;
+  description?: string; // present on create events; absent on update/delete
   story_type?: string;
   changes?: ShortcutActionChanges;
 }
@@ -39,6 +40,11 @@ export interface StoryContext {
   description: string;
   workflowStateId?: number;
   workflowStateName?: string;
+  /**
+   * Target base branch for the PR. Parsed from `base-branch: <branch>` in the
+   * ticket description; falls back to GITHUB_DEFAULT_BASE_BRANCH at runtime.
+   */
+  baseBranch?: string;
 }
 
 // Result of the shouldProcess check.

@@ -15,6 +15,7 @@ export {
   createRun,
   getRunByExternalTicketId,
   updateRunStatus,
+  updateRunWorktree,
   saveRunResult,
 } from "./runs.js";
 export type { Run, CreateRunInput } from "./runs.js";

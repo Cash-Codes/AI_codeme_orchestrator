@@ -49,6 +49,13 @@ const stmts = {
          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
      WHERE id = ?`,
   ),
+
+  updateWorktree: db.prepare<[string, string, number], void>(
+    `UPDATE runs
+     SET branch_name = ?, worktree_path = ?,
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+     WHERE id = ?`,
+  ),
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -71,6 +78,14 @@ export function getRunByExternalTicketId(ticketId: string): Run | undefined {
 
 export function updateRunStatus(id: number, status: RunStatus): void {
   stmts.updateStatus.run(status, id);
+}
+
+export function updateRunWorktree(
+  id: number,
+  branchName: string,
+  worktreePath: string,
+): void {
+  stmts.updateWorktree.run(branchName, worktreePath, id);
 }
 
 export function saveRunResult(

@@ -8,11 +8,32 @@ import type {
 
 const TRIGGER_TAG = "@codemeai";
 
-/** Find the first action whose entity_type is "story". */
+/**
+ * Parse an optional `base-branch: <name>` directive from a ticket description.
+ * Returns undefined when the directive is absent.
+ *
+ * Accepted forms (case-insensitive):
+ *   base-branch: develop
+ *   base-branch:develop
+ *   target-branch: develop
+ */
+export function parseBaseBranch(description: string): string | undefined {
+  const match = description.match(
+    /(?:base|target)-branch:\s*([^\s,\n]+)/i,
+  );
+  return match?.[1];
+}
+
+/**
+ * Find the first story action that is not a delete.
+ * Delete events don't carry usable content and should be ignored.
+ */
 export function findStoryAction(
   payload: ShortcutWebhookPayload,
 ): ShortcutAction | undefined {
-  return payload.actions.find((a) => a.entity_type === "story");
+  return payload.actions.find(
+    (a) => a.entity_type === "story" && a.action !== "delete",
+  );
 }
 
 /**
@@ -31,7 +52,13 @@ export function resolveWorkflowStateName(
 
 /**
  * Extract a StoryContext from a story action.
- * Returns undefined when required fields (id, name, description) are absent.
+ *
+ * Description resolution order:
+ *   1. changes.description.new  — present on update events that touched description
+ *   2. action.description        — present on create events
+ *
+ * Returns undefined when required fields (id, name) are absent, or when
+ * description cannot be resolved from the payload (API fetch needed).
  */
 export function extractStoryContext(
   action: ShortcutAction,
@@ -39,7 +66,10 @@ export function extractStoryContext(
 ): StoryContext | undefined {
   const storyId = action.id;
   const name = action.changes?.name?.new ?? action.name;
-  const description = action.changes?.description?.new;
+
+  // Prefer the changed value; fall back to the top-level field (create events).
+  const description =
+    action.changes?.description?.new ?? action.description;
 
   if (!name || description == null) return undefined;
 
@@ -51,6 +81,7 @@ export function extractStoryContext(
     description,
     workflowStateId,
     workflowStateName: resolveWorkflowStateName(workflowStateId, references),
+    baseBranch: parseBaseBranch(description),
   };
 }
 
@@ -58,11 +89,13 @@ export function extractStoryContext(
  * Inspect a Shortcut webhook payload and decide whether to process it.
  *
  * Rules:
- *  1. Payload must contain a story action.
+ *  1. Payload must contain a non-delete story action.
  *  2. The story context must be extractable (id + name + description present).
  *  3. The description must contain the trigger tag (@codemeai).
  *
  * Designed as a pure function so it can be tested without any I/O.
+ * When description is absent from the payload (state-change-only updates),
+ * the caller should fetch the full story via the Shortcut API and retry.
  */
 export function shouldProcessPayload(
   payload: ShortcutWebhookPayload,
@@ -72,7 +105,7 @@ export function shouldProcessPayload(
   if (!storyAction) {
     return {
       shouldProcess: false,
-      reason: "No story action found in payload",
+      reason: "No non-delete story action found in payload",
     };
   }
 
@@ -81,7 +114,8 @@ export function shouldProcessPayload(
   if (!context) {
     return {
       shouldProcess: false,
-      reason: `Story ${storyAction.id}: missing name or description in payload — skipping (full story fetch not yet implemented)`,
+      reason: `Story ${storyAction.id}: description not in payload — API fetch required`,
+      context: undefined,
     };
   }
 
