@@ -33,6 +33,23 @@ const schema = z.object({
 
   // Database
   DATABASE_URL: z.string().default("file:./data/app.db"),
+
+  // Target repo validation commands — override when the target repo uses
+  // different scripts (e.g. "yarn build" or "make lint").
+  TARGET_REPO_BUILD_CMD: z.string().default("npm run build"),
+  TARGET_REPO_LINT_CMD: z.string().default("npm run lint"),
+
+  // GitHub — used to push branches and open pull requests.
+  GITHUB_TOKEN: isTest
+    ? z.string().default("test-github-token")
+    : z.string().min(1, "GITHUB_TOKEN is required"),
+  GITHUB_REPO_OWNER: isTest
+    ? z.string().default("test-owner")
+    : z.string().min(1, "GITHUB_REPO_OWNER is required"),
+  GITHUB_REPO_NAME: isTest
+    ? z.string().default("test-repo")
+    : z.string().min(1, "GITHUB_REPO_NAME is required"),
+  GITHUB_DEFAULT_BASE_BRANCH: z.string().default("main"),
 });
 
 const parsed = schema.safeParse(process.env);
