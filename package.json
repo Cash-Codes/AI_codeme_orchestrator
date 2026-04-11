@@ -14,7 +14,8 @@
     "lint": "biome check --write src",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "prepare": "husky"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.97",
@@ -32,6 +33,7 @@
     "@types/supertest": "^7.2.0",
     "@vitest/coverage-v8": "^4.1.4",
     "drizzle-kit": "^0.21.2",
+    "husky": "^9.1.7",
     "supertest": "^7.2.2",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
