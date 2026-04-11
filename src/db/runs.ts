@@ -36,7 +36,7 @@ const stmts = {
   ),
 
   findByTicketId: db.prepare<[string], Run>(
-    `SELECT * FROM runs WHERE external_ticket_id = ? ORDER BY created_at DESC LIMIT 1`,
+    `SELECT * FROM runs WHERE external_ticket_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`,
   ),
 
   updateStatus: db.prepare<[RunStatus, number], void>(
@@ -56,6 +56,8 @@ const stmts = {
          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
      WHERE id = ?`,
   ),
+
+  findById: db.prepare<[number], Run>(`SELECT * FROM runs WHERE id = ?`),
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -105,5 +107,5 @@ export function saveRunResult(
 // ---------------------------------------------------------------------------
 
 function getRunById(id: number): Run | undefined {
-  return db.prepare<[number], Run>(`SELECT * FROM runs WHERE id = ?`).get(id);
+  return stmts.findById.get(id);
 }
