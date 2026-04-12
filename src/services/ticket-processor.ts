@@ -14,6 +14,11 @@ import {
   prepareWorktreeForTicket,
 } from "../utils/git-worktree.js";
 import { runImplementationTask } from "./claude-agent.service.js";
+import {
+  buildFailureComment,
+  buildNoChangesComment,
+  buildSuccessComment,
+} from "./shortcut-comment.builder.js";
 import { shortcutService } from "./shortcut.service.js";
 
 export class TicketProcessor {
@@ -57,52 +62,88 @@ export class TicketProcessor {
 
       console.log(`${tag} ${status} — ${result.summary}`);
 
-      if (result.outcome === "success") {
-        const baseBranch =
-          context.baseBranch ?? config.GITHUB_DEFAULT_BASE_BRANCH;
-        const prTitle = result.structured?.suggested_pr_title ?? context.name;
-
-        // Step 3: push the branch to GitHub.
-        try {
-          pushBranch({
-            cwd: worktreePath,
-            branchName,
-            owner: config.GITHUB_REPO_OWNER,
-            repo: config.GITHUB_REPO_NAME,
-            token: config.GITHUB_TOKEN,
-          });
-          console.log(`${tag} branch pushed branch=${branchName}`);
-        } catch (pushErr) {
-          const msg =
-            pushErr instanceof Error ? pushErr.message : String(pushErr);
-          console.error(`${tag} failed to push branch: ${msg}`);
-          // Non-fatal for the comment — post what we can without a PR link.
-          await postShortcutComment(context.storyId, result, null, tag);
-          return;
-        }
-
-        // Step 4: open a pull request.
-        let prUrl: string | null = null;
-        try {
-          const pr = await githubClient.createPullRequest({
-            owner: config.GITHUB_REPO_OWNER,
-            repo: config.GITHUB_REPO_NAME,
-            title: prTitle,
-            head: branchName,
-            base: baseBranch,
-            body: buildPrBody(context, result.summary, result.structured),
-          });
-          prUrl = pr.html_url;
-          updateRunPr(run.id, prUrl);
-          console.log(`${tag} PR opened #${pr.number} ${prUrl}`);
-        } catch (prErr) {
-          const msg = prErr instanceof Error ? prErr.message : String(prErr);
-          console.error(`${tag} failed to create PR: ${msg}`);
-        }
-
-        // Step 5: post Shortcut comment (with or without PR link).
-        await postShortcutComment(context.storyId, result, prUrl, tag);
+      if (result.outcome === "error") {
+        await postComment(
+          context.storyId,
+          buildFailureComment({ reason: result.summary, branchName }),
+          tag,
+        );
+        return;
       }
+
+      if (result.outcome === "no_changes") {
+        if (!branchName)
+          throw new Error("branchName unexpectedly undefined at no_changes");
+        await postComment(
+          context.storyId,
+          buildNoChangesComment({ branchName }),
+          tag,
+        );
+        return;
+      }
+
+      // outcome === "success" from here.
+      const baseBranch =
+        context.baseBranch ?? config.GITHUB_DEFAULT_BASE_BRANCH;
+      const prTitle = result.structured?.suggested_pr_title ?? context.name;
+
+      const successParams = {
+        summary: result.summary,
+        files_changed: result.structured?.files_changed ?? [],
+        validation: result.structured?.validation ?? [],
+        open_questions: result.structured?.open_questions ?? [],
+        branchName,
+      };
+
+      // Step 3: push the branch to GitHub.
+      try {
+        pushBranch({
+          cwd: worktreePath,
+          branchName,
+          owner: config.GITHUB_REPO_OWNER,
+          repo: config.GITHUB_REPO_NAME,
+          token: config.GITHUB_TOKEN,
+        });
+        console.log(`${tag} branch pushed branch=${branchName}`);
+      } catch (pushErr) {
+        const msg =
+          pushErr instanceof Error ? pushErr.message : String(pushErr);
+        console.error(`${tag} failed to push branch: ${msg}`);
+        // Run is already saved as "completed" — no prUrl means push failed.
+        // Post the success comment without a PR link and exit.
+        await postComment(
+          context.storyId,
+          buildSuccessComment({ ...successParams, prUrl: null }),
+          tag,
+        );
+        return;
+      }
+
+      // Step 4: open a pull request.
+      let prUrl: string | null = null;
+      try {
+        const pr = await githubClient.createPullRequest({
+          owner: config.GITHUB_REPO_OWNER,
+          repo: config.GITHUB_REPO_NAME,
+          title: prTitle,
+          head: branchName,
+          base: baseBranch,
+          body: buildPrBody(context, result.summary, result.structured),
+        });
+        prUrl = pr.html_url;
+        updateRunPr(run.id, prUrl);
+        console.log(`${tag} PR opened #${pr.number} ${prUrl}`);
+      } catch (prErr) {
+        const msg = prErr instanceof Error ? prErr.message : String(prErr);
+        console.error(`${tag} failed to create PR: ${msg}`);
+      }
+
+      // Step 5: post Shortcut comment.
+      await postComment(
+        context.storyId,
+        buildSuccessComment({ ...successParams, prUrl }),
+        tag,
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`${tag} failed — ${message}`);
@@ -110,6 +151,11 @@ export class TicketProcessor {
         error_message: message,
         status: "failed",
       });
+      await postComment(
+        context.storyId,
+        buildFailureComment({ reason: message, branchName }),
+        tag,
+      );
     } finally {
       // Always clean up the worktree.
       if (branchName && worktreePath) {
@@ -160,27 +206,13 @@ function buildPrBody(
   return lines.join("\n");
 }
 
-async function postShortcutComment(
+async function postComment(
   storyId: number,
-  result: import("./claude-agent.service.js").AgentResult,
-  prUrl: string | null,
+  text: string,
   tag: string,
 ): Promise<void> {
-  const lines = ["**codemeai:** Implementation complete.", result.summary];
-
-  if (prUrl) {
-    lines.push("", `Pull request: ${prUrl}`);
-  }
-
-  if (result.structured?.files_changed?.length) {
-    lines.push(
-      "",
-      `Files changed:\n${result.structured.files_changed.map((f) => `- ${f}`).join("\n")}`,
-    );
-  }
-
   try {
-    await shortcutService.createStoryComment(storyId, lines.join("\n"));
+    await shortcutService.createStoryComment(storyId, text);
     console.log(`${tag} Shortcut comment posted`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
