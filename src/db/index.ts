@@ -17,6 +17,8 @@ export {
   updateRunStatus,
   updateRunWorktree,
   saveRunResult,
+  updateRunPr,
+  listRuns,
 } from "./runs.js";
 export type { Run, CreateRunInput } from "./runs.js";
 export type { RunStatus } from "./schema.js";

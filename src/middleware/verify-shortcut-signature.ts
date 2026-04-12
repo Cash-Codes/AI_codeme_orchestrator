@@ -25,11 +25,16 @@ export function verifyShortcutSignature(
   const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
 
   if (!rawBody) {
-    res.status(400).json({ error: "Raw body unavailable for signature verification" });
+    res
+      .status(400)
+      .json({ error: "Raw body unavailable for signature verification" });
     return;
   }
 
-  const expected = `sha256=${createHmac("sha256", config.SHORTCUT_WEBHOOK_SECRET)
+  const expected = `sha256=${createHmac(
+    "sha256",
+    config.SHORTCUT_WEBHOOK_SECRET,
+  )
     .update(rawBody)
     .digest("hex")}`;
 

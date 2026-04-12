@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+/* ── Light theme (default) ── */
+:root,
+[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-subtle: #f9fafb;
+  --surface: #ffffff;
+  --surface-2: #f3f4f6;
+  --border: #e5e7eb;
+  --border-2: #d1d5db;
+  --text: #111827;
+  --text-2: #374151;
+  --muted: #6b7280;
+  --dim: #9ca3af;
+  --accent: #6366f1;
+  --accent-bg: #eef2ff;
+  --accent-border: #c7d2fe;
+  --green: #059669;
+  --green-bg: #ecfdf5;
+  --green-border: #a7f3d0;
+  --amber: #d97706;
+  --amber-bg: #fffbeb;
+  --amber-border: #fde68a;
+  --red: #dc2626;
+  --red-bg: #fef2f2;
+  --red-border: #fecaca;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --sidebar-bg: #f9fafb;
+  --topbar-accent: linear-gradient(90deg, #6366f1, #8b5cf6, #ec4899);
+}
+
+/* ── Dark theme ── */
+[data-theme="dark"] {
+  --bg: #070709;
+  --bg-subtle: #0f1117;
+  --surface: rgba(255, 255, 255, 0.03);
+  --surface-2: rgba(255, 255, 255, 0.06);
+  --border: rgba(255, 255, 255, 0.07);
+  --border-2: rgba(255, 255, 255, 0.13);
+  --text: #f0f0f5;
+  --text-2: #cbd5e1;
+  --muted: #6b7280;
+  --dim: #374151;
+  --accent: #818cf8;
+  --accent-bg: rgba(129, 140, 248, 0.12);
+  --accent-border: rgba(129, 140, 248, 0.25);
+  --green: #34d399;
+  --green-bg: rgba(52, 211, 153, 0.1);
+  --green-border: rgba(52, 211, 153, 0.25);
+  --amber: #fbbf24;
+  --amber-bg: rgba(251, 191, 36, 0.1);
+  --amber-border: rgba(251, 191, 36, 0.25);
+  --red: #f87171;
+  --red-bg: rgba(248, 113, 113, 0.1);
+  --red-border: rgba(248, 113, 113, 0.25);
+  --shadow: none;
+  --shadow-md: none;
+  --sidebar-bg: rgba(7, 7, 9, 0.95);
+  --topbar-accent: linear-gradient(90deg, #818cf8, #a78bfa, #f472b6);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Geist", system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  min-height: 100vh;
+  transition: background 0.2s, color 0.2s;
+}
+
+a {
+  text-decoration: none;
+}

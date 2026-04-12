@@ -1,6 +1,13 @@
+import { config } from "../config/env.js";
 import { createRun, getRunByExternalTicketId } from "../db/index.js";
-import type { ShortcutWebhookPayload, StoryContext } from "../types/shortcut.js";
-import { findStoryAction, shouldProcessPayload } from "../utils/shortcut-filter.js";
+import type {
+  ShortcutWebhookPayload,
+  StoryContext,
+} from "../types/shortcut.js";
+import {
+  findStoryAction,
+  shouldProcessPayload,
+} from "../utils/shortcut-filter.js";
 import { shortcutService } from "./shortcut.service.js";
 import { ticketProcessor } from "./ticket-processor.js";
 
@@ -22,6 +29,12 @@ export type EnqueueResult =
 export async function enqueueShortcutWebhook(
   payload: ShortcutWebhookPayload,
 ): Promise<EnqueueResult> {
+  if (config.DEMO_MODE) {
+    const reason = "Demo mode — webhook processing disabled";
+    console.log(`[shortcut-webhook] ignored — ${reason}`);
+    return { skipped: true, reason };
+  }
+
   // Defensive: treat missing or empty actions as a no-op.
   if (!Array.isArray(payload.actions) || payload.actions.length === 0) {
     const reason = "Payload has no actions";
@@ -32,10 +45,7 @@ export async function enqueueShortcutWebhook(
   let filter = shouldProcessPayload(payload);
 
   // If description is absent from the payload, attempt to fetch the full story.
-  if (
-    !filter.shouldProcess &&
-    filter.reason.includes("API fetch required")
-  ) {
+  if (!filter.shouldProcess && filter.reason.includes("API fetch required")) {
     const storyAction = findStoryAction(payload);
     if (storyAction) {
       try {
@@ -54,7 +64,11 @@ export async function enqueueShortcutWebhook(
             reason: `Story ${story.id}: description does not contain ${TRIGGER_TAG} (fetched from API)`,
           };
         }
-        filter = { shouldProcess: true, reason: "trigger tag found (fetched from API)", context: enrichedContext };
+        filter = {
+          shouldProcess: true,
+          reason: "trigger tag found (fetched from API)",
+          context: enrichedContext,
+        };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(
@@ -74,7 +88,10 @@ export async function enqueueShortcutWebhook(
 
   // Duplicate-run guard: skip if we already have an active or finished run.
   const existing = getRunByExternalTicketId(String(context!.storyId));
-  if (existing && (existing.status === "running" || existing.status === "completed")) {
+  if (
+    existing &&
+    (existing.status === "running" || existing.status === "completed")
+  ) {
     const reason = `Story ${context!.storyId}: run ${existing.id} already ${existing.status}`;
     console.log(`[shortcut-webhook] ignored — ${reason}`);
     return { skipped: true, reason };
@@ -83,6 +100,8 @@ export async function enqueueShortcutWebhook(
   const run = createRun({
     external_ticket_id: String(context!.storyId),
     tool: "shortcut",
+    pr_target_branch: context!.baseBranch ?? config.GITHUB_DEFAULT_BASE_BRANCH,
+    story_url: `https://app.shortcut.com/${config.SHORTCUT_WORKSPACE_SLUG}/story/${context!.storyId}`,
   });
 
   console.log(
@@ -91,12 +110,14 @@ export async function enqueueShortcutWebhook(
 
   // Fire-and-forget — the route responds before this resolves.
   // The processor manages its own error handling and status updates.
-  ticketProcessor.process(run, context!).catch((err) =>
-    console.error(
-      `[shortcut-webhook] unhandled processor error for run=${run.id}:`,
-      err,
-    ),
-  );
+  ticketProcessor
+    .process(run, context!)
+    .catch((err) =>
+      console.error(
+        `[shortcut-webhook] unhandled processor error for run=${run.id}:`,
+        err,
+      ),
+    );
 
   return { skipped: false, runId: run.id };
 }

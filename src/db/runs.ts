@@ -8,6 +8,9 @@ export interface Run {
   status: RunStatus;
   branch_name: string | null;
   worktree_path: string | null;
+  pr_target_branch: string | null;
+  pr_url: string | null;
+  story_url: string | null;
   summary: string | null;
   error_message: string | null;
   created_at: string;
@@ -19,6 +22,8 @@ export interface CreateRunInput {
   tool: string;
   branch_name?: string;
   worktree_path?: string;
+  pr_target_branch?: string;
+  story_url?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -27,23 +32,33 @@ export interface CreateRunInput {
 
 const stmts = {
   insert: db.prepare<
-    [string, string, string | undefined, string | undefined],
+    [
+      string,
+      string,
+      string | null,
+      string | null,
+      string | null,
+      string | null,
+    ],
     { id: number }
   >(
-    `INSERT INTO runs (external_ticket_id, tool, branch_name, worktree_path)
-     VALUES (?, ?, ?, ?)
+    `INSERT INTO runs (external_ticket_id, tool, branch_name, worktree_path, pr_target_branch, story_url)
+     VALUES (?, ?, ?, ?, ?, ?)
      RETURNING id`,
   ),
 
   findByTicketId: db.prepare<[string], Run>(
-    `SELECT * FROM runs WHERE external_ticket_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`,
+    "SELECT * FROM runs WHERE external_ticket_id = ? ORDER BY created_at DESC, id DESC LIMIT 1",
   ),
 
   updateStatus: db.prepare<[RunStatus, number], void>(
     `UPDATE runs SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?`,
   ),
 
-  saveResult: db.prepare<[string | null, string | null, RunStatus, number], void>(
+  saveResult: db.prepare<
+    [string | null, string | null, RunStatus, number],
+    void
+  >(
     `UPDATE runs
      SET summary = ?, error_message = ?, status = ?,
          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
@@ -57,7 +72,17 @@ const stmts = {
      WHERE id = ?`,
   ),
 
-  findById: db.prepare<[number], Run>(`SELECT * FROM runs WHERE id = ?`),
+  findById: db.prepare<[number], Run>("SELECT * FROM runs WHERE id = ?"),
+
+  updatePr: db.prepare<[string, number], void>(
+    `UPDATE runs
+     SET pr_url = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+     WHERE id = ?`,
+  ),
+
+  listAll: db.prepare<[], Run>(
+    "SELECT * FROM runs ORDER BY created_at DESC, id DESC",
+  ),
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -68,8 +93,10 @@ export function createRun(input: CreateRunInput): Run {
   const row = stmts.insert.get(
     input.external_ticket_id,
     input.tool,
-    input.branch_name,
-    input.worktree_path,
+    input.branch_name ?? null,
+    input.worktree_path ?? null,
+    input.pr_target_branch ?? null,
+    input.story_url ?? null,
   )!;
   return getRunById(row.id)!;
 }
@@ -100,6 +127,14 @@ export function saveRunResult(
     result.status,
     id,
   );
+}
+
+export function updateRunPr(id: number, prUrl: string): void {
+  stmts.updatePr.run(prUrl, id);
+}
+
+export function listRuns(): Run[] {
+  return stmts.listAll.all();
 }
 
 // ---------------------------------------------------------------------------

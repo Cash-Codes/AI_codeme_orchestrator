@@ -12,11 +12,11 @@
  */
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import type { AgentOutput } from "../utils/prompts/implementation.js";
+import type { AgentOutput } from "../prompts/implementation.js";
 import {
   buildImplementationPrompt,
   parseAgentOutput,
-} from "../utils/prompts/implementation.js";
+} from "../prompts/implementation.js";
 
 // ---------------------------------------------------------------------------
 // Public interface — stable contract regardless of backend (SDK vs CLI)
@@ -91,9 +91,17 @@ export async function runImplementationTask(
     })) {
       if ("result" in message) {
         // Surface SDK-level errors reported in the result message.
-        if ("errors" in message && Array.isArray(message.errors) && message.errors.length > 0) {
+        if (
+          "errors" in message &&
+          Array.isArray(message.errors) &&
+          message.errors.length > 0
+        ) {
           const errorDetail = (message.errors as unknown[])
-            .map((e) => (typeof e === "object" && e !== null && "message" in e ? (e as { message: string }).message : String(e)))
+            .map((e) =>
+              typeof e === "object" && e !== null && "message" in e
+                ? (e as { message: string }).message
+                : String(e),
+            )
             .join("; ");
           console.error(`[claude-agent] SDK result errors: ${errorDetail}`);
           return {
@@ -122,7 +130,9 @@ export async function runImplementationTask(
   const parsed = parseAgentOutput(rawOutput);
 
   if (!parsed.ok) {
-    console.warn(`[claude-agent] could not parse structured output: ${parsed.reason}`);
+    console.warn(
+      `[claude-agent] could not parse structured output: ${parsed.reason}`,
+    );
     return {
       outcome: "error",
       summary: `Agent completed but output could not be parsed: ${parsed.reason}`,
@@ -133,7 +143,10 @@ export async function runImplementationTask(
   const { data } = parsed;
 
   const validationSummary = data.validation
-    .map((v) => `${v.passed ? "✓" : "✗"} ${v.command}${v.notes ? ` (${v.notes})` : ""}`)
+    .map(
+      (v) =>
+        `${v.passed ? "✓" : "✗"} ${v.command}${v.notes ? ` (${v.notes})` : ""}`,
+    )
     .join(", ");
 
   console.log(

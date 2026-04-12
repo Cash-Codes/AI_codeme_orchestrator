@@ -6,6 +6,9 @@ export const CREATE_RUNS_TABLE = `
     status             TEXT    NOT NULL DEFAULT 'pending',
     branch_name        TEXT,
     worktree_path      TEXT,
+    pr_target_branch   TEXT,
+    pr_url             TEXT,
+    story_url          TEXT,
     summary            TEXT,
     error_message      TEXT,
     created_at         TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -13,5 +16,4 @@ export const CREATE_RUNS_TABLE = `
   )
 ` as const;
 
-// Valid status values — kept here so the rest of the app can import them.
 export type RunStatus = "pending" | "running" | "completed" | "failed";

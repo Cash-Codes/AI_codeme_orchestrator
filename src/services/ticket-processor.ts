@@ -1,15 +1,20 @@
-import { saveRunResult, updateRunStatus, updateRunWorktree } from "../db/index.js";
+import { githubClient } from "../clients/github.client.js";
+import { config } from "../config/env.js";
+import {
+  saveRunResult,
+  updateRunPr,
+  updateRunStatus,
+  updateRunWorktree,
+} from "../db/index.js";
 import type { Run } from "../db/index.js";
 import type { StoryContext } from "../types/shortcut.js";
+import { pushBranch } from "../utils/git-push.js";
 import {
   cleanupWorktree,
   prepareWorktreeForTicket,
 } from "../utils/git-worktree.js";
-import { pushBranch } from "../utils/git-push.js";
 import { runImplementationTask } from "./claude-agent.service.js";
 import { shortcutService } from "./shortcut.service.js";
-import { githubClient } from "../clients/github.client.js";
-import { config } from "../config/env.js";
 
 export class TicketProcessor {
   async process(run: Run, context: StoryContext): Promise<void> {
@@ -53,7 +58,8 @@ export class TicketProcessor {
       console.log(`${tag} ${status} — ${result.summary}`);
 
       if (result.outcome === "success") {
-        const baseBranch = context.baseBranch ?? config.GITHUB_DEFAULT_BASE_BRANCH;
+        const baseBranch =
+          context.baseBranch ?? config.GITHUB_DEFAULT_BASE_BRANCH;
         const prTitle = result.structured?.suggested_pr_title ?? context.name;
 
         // Step 3: push the branch to GitHub.
@@ -67,7 +73,8 @@ export class TicketProcessor {
           });
           console.log(`${tag} branch pushed branch=${branchName}`);
         } catch (pushErr) {
-          const msg = pushErr instanceof Error ? pushErr.message : String(pushErr);
+          const msg =
+            pushErr instanceof Error ? pushErr.message : String(pushErr);
           console.error(`${tag} failed to push branch: ${msg}`);
           // Non-fatal for the comment — post what we can without a PR link.
           await postShortcutComment(context.storyId, result, null, tag);
@@ -86,6 +93,7 @@ export class TicketProcessor {
             body: buildPrBody(context, result.summary, result.structured),
           });
           prUrl = pr.html_url;
+          updateRunPr(run.id, prUrl);
           console.log(`${tag} PR opened #${pr.number} ${prUrl}`);
         } catch (prErr) {
           const msg = prErr instanceof Error ? prErr.message : String(prErr);
@@ -120,30 +128,34 @@ export const ticketProcessor = new TicketProcessor();
 function buildPrBody(
   context: StoryContext,
   summary: string,
-  structured: import("../utils/prompts/implementation.js").AgentOutput | undefined,
+  structured: import("../prompts/implementation.js").AgentOutput | undefined,
 ): string {
   const lines: string[] = [
-    `## Summary`,
+    "## Summary",
     summary,
-    ``,
-    `Implements Shortcut story [#${context.storyId}](https://app.shortcut.com/story/${context.storyId}) — _${context.name}_`,
+    "",
+    `Implements Shortcut story [#${context.storyId}](https://app.shortcut.com/${config.SHORTCUT_WORKSPACE_SLUG}/story/${context.storyId}) — _${context.name}_`,
   ];
 
   if (structured?.files_changed?.length) {
-    lines.push(``, `## Files changed`);
+    lines.push("", "## Files changed");
     for (const f of structured.files_changed) {
       lines.push(`- \`${f}\``);
     }
   }
 
   if (structured?.open_questions?.length) {
-    lines.push(``, `## Open questions`);
+    lines.push("", "## Open questions");
     for (const q of structured.open_questions) {
       lines.push(`- ${q}`);
     }
   }
 
-  lines.push(``, `---`, `_Opened automatically by [codemeai](https://github.com/${context.storyId})_`);
+  lines.push(
+    "",
+    "---",
+    `_Opened automatically by [codemeai](https://github.com/${config.GITHUB_REPO_OWNER}/${config.GITHUB_REPO_NAME})_`,
+  );
 
   return lines.join("\n");
 }
@@ -154,15 +166,15 @@ async function postShortcutComment(
   prUrl: string | null,
   tag: string,
 ): Promise<void> {
-  const lines = [`**codemeai:** Implementation complete.`, result.summary];
+  const lines = ["**codemeai:** Implementation complete.", result.summary];
 
   if (prUrl) {
-    lines.push(``, `Pull request: ${prUrl}`);
+    lines.push("", `Pull request: ${prUrl}`);
   }
 
   if (result.structured?.files_changed?.length) {
     lines.push(
-      ``,
+      "",
       `Files changed:\n${result.structured.files_changed.map((f) => `- ${f}`).join("\n")}`,
     );
   }

@@ -18,9 +18,7 @@ const TRIGGER_TAG = "@codemeai";
  *   target-branch: develop
  */
 export function parseBaseBranch(description: string): string | undefined {
-  const match = description.match(
-    /(?:base|target)-branch:\s*([^\s,\n]+)/i,
-  );
+  const match = description.match(/(?:base|target)-branch:\s*([^\s,\n]+)/i);
   return match?.[1];
 }
 
@@ -68,8 +66,7 @@ export function extractStoryContext(
   const name = action.changes?.name?.new ?? action.name;
 
   // Prefer the changed value; fall back to the top-level field (create events).
-  const description =
-    action.changes?.description?.new ?? action.description;
+  const description = action.changes?.description?.new ?? action.description;
 
   if (!name || description == null) return undefined;
 

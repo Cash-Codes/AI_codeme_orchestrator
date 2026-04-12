@@ -1,5 +1,5 @@
-import { shortcutClient } from "../clients/shortcutClient.js";
-import type { ShortcutClient } from "../clients/shortcutClient.js";
+import { shortcutClient } from "../clients/shortcut.client.js";
+import type { ShortcutClient } from "../clients/shortcut.client.js";
 
 // ---------------------------------------------------------------------------
 // Normalised types — what the rest of the app works with
