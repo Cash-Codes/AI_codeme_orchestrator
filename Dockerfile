@@ -100,6 +100,12 @@ RUN mkdir -p /app/data
 COPY package*.json ./
 RUN npm ci --omit=dev
 
+# Copy and build frontend
+COPY frontend/package*.json ./frontend/
+RUN cd frontend && npm ci
+COPY frontend/ ./frontend/
+RUN npm run build:frontend
+
 # Copy compiled output
 COPY dist/ ./dist/
 

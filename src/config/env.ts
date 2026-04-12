@@ -11,24 +11,27 @@ const schema = z.object({
   // Shortcut (Clubhouse) integration
   SHORTCUT_API_TOKEN: isTest
     ? z.string().default("test-token")
-    : z.string().min(1, "SHORTCUT_API_TOKEN is required"),
+    : z.string().default(""),
   SHORTCUT_WEBHOOK_SECRET: isTest
     ? z.string().default("test-secret")
-    : z.string().min(1, "SHORTCUT_WEBHOOK_SECRET is required"),
+    : z.string().default(""),
   SHORTCUT_BASE_URL: z
     .string()
     .url()
     .default("https://api.app.shortcut.com/api/v3"),
+  SHORTCUT_WORKSPACE_SLUG: isTest
+    ? z.string().default("test-workspace")
+    : z.string().default(""),
 
   // Anthropic
   ANTHROPIC_API_KEY: isTest
     ? z.string().default("test-key")
-    : z.string().min(1, "ANTHROPIC_API_KEY is required"),
+    : z.string().default(""),
 
   // Git / worktree
   GIT_REPO_PATH: isTest
     ? z.string().default("/tmp/test-repo")
-    : z.string().min(1, "GIT_REPO_PATH is required"),
+    : z.string().default(""),
   WORKTREE_BASE_DIR: z.string().default("/tmp/handleai-worktrees"),
 
   // Database
@@ -42,13 +45,13 @@ const schema = z.object({
   // GitHub — used to push branches and open pull requests.
   GITHUB_TOKEN: isTest
     ? z.string().default("test-github-token")
-    : z.string().min(1, "GITHUB_TOKEN is required"),
+    : z.string().default(""),
   GITHUB_REPO_OWNER: isTest
     ? z.string().default("test-owner")
-    : z.string().min(1, "GITHUB_REPO_OWNER is required"),
+    : z.string().default(""),
   GITHUB_REPO_NAME: isTest
     ? z.string().default("test-repo")
-    : z.string().min(1, "GITHUB_REPO_NAME is required"),
+    : z.string().default(""),
   GITHUB_DEFAULT_BASE_BRANCH: z.string().default("main"),
 });
 
@@ -61,5 +64,11 @@ if (!parsed.success) {
   throw new Error(`Invalid environment configuration:\n${issues}`);
 }
 
-export const config = Object.freeze(parsed.data);
+const DEMO_MODE =
+  !parsed.data.SHORTCUT_API_TOKEN ||
+  !parsed.data.ANTHROPIC_API_KEY ||
+  !parsed.data.GITHUB_TOKEN ||
+  !parsed.data.GIT_REPO_PATH;
+
+export const config = Object.freeze({ ...parsed.data, DEMO_MODE });
 export type Config = typeof config;

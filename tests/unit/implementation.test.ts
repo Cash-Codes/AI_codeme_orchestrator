@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   parseAgentOutput,
   buildImplementationPrompt,
-} from "../../src/utils/prompts/implementation.js";
+} from "../../src/prompts/implementation.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

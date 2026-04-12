@@ -1,1 +1,1 @@
-# pre-commit hook (intentionally empty — tests run on pre-push)
+npx biome check src frontend/src

@@ -27,9 +27,7 @@ export function prepareWorktreeForTicket(
 
   // Validate repo path.
   if (!existsSync(repoPath)) {
-    throw new Error(
-      `GIT_REPO_PATH does not exist: ${repoPath}`,
-    );
+    throw new Error(`GIT_REPO_PATH does not exist: ${repoPath}`);
   }
 
   git(repoPath, ["rev-parse", "--git-dir"]); // throws if not a git repo
@@ -97,7 +95,9 @@ function git(cwd: string, args: string[]): string {
   } catch (err) {
     const stderr =
       err instanceof Error && "stderr" in err
-        ? String((err as NodeJS.ErrnoException & { stderr?: Buffer }).stderr ?? "")
+        ? String(
+            (err as NodeJS.ErrnoException & { stderr?: Buffer }).stderr ?? "",
+          )
         : "";
     throw new Error(
       `git ${args.join(" ")} failed in ${cwd}: ${stderr || errorMessage(err)}`,

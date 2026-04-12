@@ -49,9 +49,7 @@ export class GitHubClient {
 
     if (!res.ok) {
       const text = await res.text().catch(() => "(no body)");
-      throw new Error(
-        `GitHub API error ${res.status} creating PR: ${text}`,
-      );
+      throw new Error(`GitHub API error ${res.status} creating PR: ${text}`);
     }
 
     const data = (await res.json()) as {

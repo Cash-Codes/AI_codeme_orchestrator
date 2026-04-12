@@ -205,7 +205,11 @@ export function parseAgentOutput(rawOutput: string): ParsedAgentOutput {
   try {
     parsed = JSON.parse(rawJson);
   } catch {
-    return { ok: false, reason: "JSON result block could not be parsed", rawJson };
+    return {
+      ok: false,
+      reason: "JSON result block could not be parsed",
+      rawJson,
+    };
   }
 
   if (typeof parsed !== "object" || parsed === null) {
@@ -227,21 +231,31 @@ export function parseAgentOutput(rawOutput: string): ParsedAgentOutput {
     ok: true,
     data: {
       outcome: obj.outcome as AgentOutput["outcome"],
-      summary: typeof obj.summary === "string" ? obj.summary : "No summary provided.",
+      summary:
+        typeof obj.summary === "string" ? obj.summary : "No summary provided.",
       files_changed: Array.isArray(obj.files_changed)
-        ? (obj.files_changed as unknown[]).filter((f): f is string => typeof f === "string")
+        ? (obj.files_changed as unknown[]).filter(
+            (f): f is string => typeof f === "string",
+          )
         : [],
       validation: Array.isArray(obj.validation)
         ? (obj.validation as unknown[]).filter(
             (v): v is AgentOutput["validation"][number] =>
-              typeof v === "object" && v !== null && "command" in v && "passed" in v,
+              typeof v === "object" &&
+              v !== null &&
+              "command" in v &&
+              "passed" in v,
           )
         : [],
       open_questions: Array.isArray(obj.open_questions)
-        ? (obj.open_questions as unknown[]).filter((q): q is string => typeof q === "string")
+        ? (obj.open_questions as unknown[]).filter(
+            (q): q is string => typeof q === "string",
+          )
         : [],
       suggested_pr_title:
-        typeof obj.suggested_pr_title === "string" ? obj.suggested_pr_title : "",
+        typeof obj.suggested_pr_title === "string"
+          ? obj.suggested_pr_title
+          : "",
     },
   };
 }
