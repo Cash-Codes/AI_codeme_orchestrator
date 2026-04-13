@@ -2,7 +2,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import type { Request } from "express";
+import { config } from "./config/env.js";
 import apiRouter from "./routes/api.js";
+import debugRouter from "./routes/debug.js";
 import webhooksRouter from "./routes/webhooks.js";
 
 const app = express();
@@ -21,6 +23,11 @@ app.get("/health", (_req, res) => {
 });
 
 app.use("/api", apiRouter);
+
+if (config.NODE_ENV !== "production") {
+  app.use("/api/debug", debugRouter);
+}
+
 app.use(webhooksRouter);
 
 // Serve built React SPA — must be after all API routes so /api/* and /webhooks/* are not swallowed.
