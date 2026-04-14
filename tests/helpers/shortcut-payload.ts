@@ -14,7 +14,7 @@ export interface PayloadBundle {
  * Default secret matches the env.ts test default for SHORTCUT_WEBHOOK_SECRET.
  */
 export function signBody(body: string, secret = "test-secret"): string {
-  return `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
+  return createHmac("sha256", secret).update(body).digest("hex");
 }
 
 /**
