@@ -1,11 +1,43 @@
-FROM node:22-slim
+# =============================================================================
+# Stage 1: Build the React/Vite frontend
+# =============================================================================
+FROM node:22-slim AS frontend-builder
 
-# Install git (required for git worktree operations)
+WORKDIR /app/frontend
+
+COPY frontend/package*.json ./
+RUN npm ci
+
+COPY frontend/ ./
+# Outputs to ../dist/frontend (vite.config.ts: outDir: "../dist/frontend")
+RUN npm run build
+
+
+# =============================================================================
+# Stage 2: Compile TypeScript backend
+# =============================================================================
+FROM node:22-slim AS backend-builder
+
+WORKDIR /app
+
+COPY package*.json tsconfig.json ./
+RUN npm ci
+
+COPY src/ ./src/
+RUN npx tsc
+
+
+# =============================================================================
+# Stage 3: Runtime — Claude Code agent + Express orchestration server
+# =============================================================================
+FROM node:22-slim AS runtime
+
+# git is required for worktree operations
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
   && rm -rf /var/lib/apt/lists/*
 
-# Install Claude Code CLI
+# Install Claude Code CLI globally
 RUN npm install -g @anthropic-ai/claude-code
 
 # Install agent plugins
@@ -14,8 +46,7 @@ RUN claude plugin install superpowers \
  && claude plugin install typescript-lsp \
  && claude plugin install security-guidance
 
-# Write Claude Code runtime config directly into the image.
-# These files are NOT in the source repo — they belong to the Cloud Run environment only.
+# Write Claude Code runtime config directly into the image
 RUN mkdir -p /root/.claude/agents
 
 RUN cat > /root/.claude/settings.json <<'EOF'
@@ -93,23 +124,22 @@ EOF
 
 WORKDIR /app
 
-# Ensure the data directory exists so SQLite can write the DB file on first run.
-RUN mkdir -p /app/data
-
-# Install Node dependencies (production only)
+# Production dependencies (includes better-sqlite3 native bindings)
 COPY package*.json ./
 RUN npm ci --omit=dev
 
-# Copy and build frontend
-COPY frontend/package*.json ./frontend/
-RUN cd frontend && npm ci
-COPY frontend/ ./frontend/
-RUN npm run build:frontend
+# Compiled backend from Stage 2
+COPY --from=backend-builder /app/dist ./dist
 
-# Copy compiled output
-COPY dist/ ./dist/
+# Built frontend SPA served as static files by Express
+COPY --from=frontend-builder /app/dist/frontend ./dist/frontend
+
+# SQLite database directory — mount a volume here for persistence
+RUN mkdir -p /app/data
 
 ENV NODE_ENV=production
+ENV PORT=8080
+
 EXPOSE 8080
 
 CMD ["node", "dist/server.js"]

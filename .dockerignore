@@ -1,8 +1,34 @@
-node_modules/
+# Dependencies (each stage installs its own)
+node_modules
+frontend/node_modules
+
+# Local build output (built inside Docker, not from host)
+dist
+frontend/dist
+
+# Environment — never bake secrets into the image
 .env
-data/
-src/
+.env.*
+!.env.example
+
+# SQLite database files
+data
 *.db
 *.db-shm
 *.db-wal
+
+# Development / test artifacts
+coverage
+tests
+
+# Docs and planning files
+docs
+
+# OS and editor noise
 .DS_Store
+.vscode
+.idea
+
+# Git internals (not needed in build context)
+.git
+.gitignore
