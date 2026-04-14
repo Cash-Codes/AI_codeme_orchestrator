@@ -23,11 +23,6 @@ const schema = z.object({
     ? z.string().default("test-workspace")
     : z.string().default(""),
 
-  // Anthropic
-  ANTHROPIC_API_KEY: isTest
-    ? z.string().default("test-key")
-    : z.string().default(""),
-
   // Git / worktree
   GIT_REPO_PATH: isTest
     ? z.string().default("/tmp/test-repo")
