@@ -66,7 +66,6 @@ if (!parsed.success) {
 
 const DEMO_MODE =
   !parsed.data.SHORTCUT_API_TOKEN ||
-  !parsed.data.ANTHROPIC_API_KEY ||
   !parsed.data.GITHUB_TOKEN ||
   !parsed.data.GIT_REPO_PATH;
 

@@ -32,3 +32,4 @@ docs
 # Git internals (not needed in build context)
 .git
 .gitignore
+claude-credentials.json

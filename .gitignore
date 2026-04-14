@@ -9,3 +9,4 @@ data/
 *.db-wal
 .DS_Store
 coverage/
+claude-credentials.json

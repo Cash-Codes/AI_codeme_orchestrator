@@ -1,17 +1,13 @@
 /**
  * Claude Agent Service
  *
- * Integrates the Anthropic Claude Agent SDK to run implementation tasks
- * inside an isolated git worktree. The Agent SDK reads ANTHROPIC_API_KEY
- * from process.env automatically — the key is validated at server startup
- * in src/config/env.ts, so by the time this service is called it is present.
- *
- * Swap strategy: to run Claude Code CLI as a subprocess instead of the SDK,
- * replace runImplementationTask() with a child_process.execFile() call and
- * parse stdout. AgentResult and ImplementationTaskInput stay the same.
+ * Runs implementation tasks by spawning the Claude Code CLI as a subprocess
+ * inside an isolated git worktree. Auth is handled by the CLI via stored
+ * OAuth credentials (/root/.claude/.credentials.json) — no ANTHROPIC_API_KEY
+ * required.
  */
 
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { spawn } from "node:child_process";
 import type { AgentOutput } from "../prompts/implementation.js";
 import {
   buildImplementationPrompt,
@@ -55,10 +51,10 @@ export interface AgentResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Runs a Claude agent to implement the ticket inside the given worktree.
+ * Runs the Claude Code CLI to implement the ticket inside the given worktree.
  *
- * ANTHROPIC_API_KEY is consumed by the Agent SDK from process.env.
- * It is validated at server startup — if missing the server refuses to start.
+ * Auth is handled by the CLI itself — it reads stored OAuth credentials from
+ * /root/.claude/.credentials.json. No API key needed.
  */
 export async function runImplementationTask(
   input: ImplementationTaskInput,
@@ -72,97 +68,110 @@ export async function runImplementationTask(
     lintCmd: input.lintCmd,
   });
 
-  const outputChunks: string[] = [];
-
   console.log(
     `[claude-agent] starting run branch=${input.branchName} cwd=${input.worktreePath}`,
   );
 
-  try {
-    for await (const message of query({
-      prompt,
-      options: {
+  return new Promise((resolve) => {
+    const proc = spawn(
+      "claude",
+      [
+        "--print",
+        "--max-turns",
+        "80",
+        "--allowedTools",
+        "Read,Write,Edit,Glob,Grep,Bash",
+      ],
+      {
         cwd: input.worktreePath,
-        // ANTHROPIC_API_KEY is consumed here by the Agent SDK from process.env.
-        tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash"],
-        permissionMode: "acceptEdits",
-        maxTurns: 40,
+        env: process.env,
       },
-    })) {
-      if ("result" in message) {
-        // Surface SDK-level errors reported in the result message.
-        if (
-          "errors" in message &&
-          Array.isArray(message.errors) &&
-          message.errors.length > 0
-        ) {
-          const errorDetail = (message.errors as unknown[])
-            .map((e) =>
-              typeof e === "object" && e !== null && "message" in e
-                ? (e as { message: string }).message
-                : String(e),
-            )
-            .join("; ");
-          console.error(`[claude-agent] SDK result errors: ${errorDetail}`);
-          return {
-            outcome: "error",
-            summary: `Agent SDK reported errors: ${errorDetail}`,
-            rawOutput: outputChunks.join("\n"),
-          };
-        }
-        outputChunks.push(message.result);
-        console.log(
-          `[claude-agent] result received (${message.result.length} chars)`,
+    );
+
+    proc.stdin.write(prompt);
+    proc.stdin.end();
+
+    const stdoutChunks: string[] = [];
+    const stderrChunks: string[] = [];
+
+    proc.stdout.on("data", (chunk: Buffer) => {
+      const text = chunk.toString();
+      stdoutChunks.push(text);
+      process.stdout.write(`[claude-agent] ${text}`);
+    });
+
+    proc.stderr.on("data", (chunk: Buffer) => {
+      const text = chunk.toString();
+      stderrChunks.push(text);
+      process.stderr.write(`[claude-agent:err] ${text}`);
+    });
+
+    proc.on("error", (err) => {
+      console.error(
+        `[claude-agent] failed to spawn claude CLI: ${err.message}`,
+      );
+      resolve({
+        outcome: "error",
+        summary: `Failed to spawn claude CLI: ${err.message}`,
+        rawOutput: "",
+      });
+    });
+
+    proc.on("close", (code) => {
+      const rawOutput = stdoutChunks.join("");
+
+      if (code !== 0) {
+        const errDetail = stderrChunks.join("").trim().slice(0, 300);
+        console.error(
+          `[claude-agent] CLI exited with code ${code}: ${errDetail}`,
+        );
+        resolve({
+          outcome: "error",
+          summary: `Claude CLI exited with code ${code}: ${errDetail}`,
+          rawOutput,
+        });
+        return;
+      }
+
+      const parsed = parseAgentOutput(rawOutput);
+
+      if (!parsed.ok) {
+        console.warn(
+          `[claude-agent] could not parse structured output: ${parsed.reason}`,
+        );
+        resolve({
+          outcome: "error",
+          summary: `Agent completed but output could not be parsed: ${parsed.reason}`,
+          rawOutput,
+        });
+        return;
+      }
+
+      const { data } = parsed;
+
+      const validationSummary = data.validation
+        .map(
+          (v) =>
+            `${v.passed ? "✓" : "✗"} ${v.command}${v.notes ? ` (${v.notes})` : ""}`,
+        )
+        .join(", ");
+
+      console.log(
+        `[claude-agent] finished outcome=${data.outcome} files=${data.files_changed.length} validation=[${validationSummary}]`,
+      );
+
+      if (data.open_questions.length > 0) {
+        console.warn(
+          `[claude-agent] open questions: ${data.open_questions.join(" | ")}`,
         );
       }
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[claude-agent] SDK error: ${msg}`);
-    return {
-      outcome: "error",
-      summary: `Agent SDK error: ${msg}`,
-      rawOutput: outputChunks.join("\n"),
-    };
-  }
 
-  const rawOutput = outputChunks.join("\n");
-  const parsed = parseAgentOutput(rawOutput);
-
-  if (!parsed.ok) {
-    console.warn(
-      `[claude-agent] could not parse structured output: ${parsed.reason}`,
-    );
-    return {
-      outcome: "error",
-      summary: `Agent completed but output could not be parsed: ${parsed.reason}`,
-      rawOutput,
-    };
-  }
-
-  const { data } = parsed;
-
-  const validationSummary = data.validation
-    .map(
-      (v) =>
-        `${v.passed ? "✓" : "✗"} ${v.command}${v.notes ? ` (${v.notes})` : ""}`,
-    )
-    .join(", ");
-
-  console.log(
-    `[claude-agent] finished outcome=${data.outcome} files=${data.files_changed.length} validation=[${validationSummary}]`,
-  );
-
-  if (data.open_questions.length > 0) {
-    console.warn(
-      `[claude-agent] open questions: ${data.open_questions.join(" | ")}`,
-    );
-  }
-
-  return {
-    outcome: data.outcome,
-    summary: data.summary,
-    structured: data,
-    rawOutput,
-  };
+      resolve({
+        outcome: data.outcome,
+        summary: data.summary,
+        structured: data,
+        rawOutput,
+      });
+    });
+  });
 }

@@ -88,10 +88,7 @@ export async function enqueueShortcutWebhook(
 
   // Duplicate-run guard: skip if we already have an active or finished run.
   const existing = getRunByExternalTicketId(String(context!.storyId));
-  if (
-    existing &&
-    (existing.status === "running" || existing.status === "completed")
-  ) {
+  if (existing) {
     const reason = `Story ${context!.storyId}: run ${existing.id} already ${existing.status}`;
     console.log(`[shortcut-webhook] ignored — ${reason}`);
     return { skipped: true, reason };
