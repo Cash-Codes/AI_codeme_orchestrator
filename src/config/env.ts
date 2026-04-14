@@ -23,11 +23,6 @@ const schema = z.object({
     ? z.string().default("test-workspace")
     : z.string().default(""),
 
-  // Anthropic
-  ANTHROPIC_API_KEY: isTest
-    ? z.string().default("test-key")
-    : z.string().default(""),
-
   // Git / worktree
   GIT_REPO_PATH: isTest
     ? z.string().default("/tmp/test-repo")
@@ -66,7 +61,6 @@ if (!parsed.success) {
 
 const DEMO_MODE =
   !parsed.data.SHORTCUT_API_TOKEN ||
-  !parsed.data.ANTHROPIC_API_KEY ||
   !parsed.data.GITHUB_TOKEN ||
   !parsed.data.GIT_REPO_PATH;
 

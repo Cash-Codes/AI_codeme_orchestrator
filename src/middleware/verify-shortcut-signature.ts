@@ -15,7 +15,8 @@ export function verifyShortcutSignature(
   res: Response,
   next: NextFunction,
 ): void {
-  const signature = req.headers["shortcut-signature"];
+  const signature =
+    req.headers["shortcut-signature"] ?? req.headers["clubhouse-signature"];
 
   if (typeof signature !== "string" || !signature) {
     res.status(401).json({ error: "Missing Shortcut-Signature header" });
@@ -31,12 +32,9 @@ export function verifyShortcutSignature(
     return;
   }
 
-  const expected = `sha256=${createHmac(
-    "sha256",
-    config.SHORTCUT_WEBHOOK_SECRET,
-  )
+  const expected = createHmac("sha256", config.SHORTCUT_WEBHOOK_SECRET)
     .update(rawBody)
-    .digest("hex")}`;
+    .digest("hex");
 
   const sigBuf = Buffer.from(signature);
   const expBuf = Buffer.from(expected);

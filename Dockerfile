@@ -1,44 +1,86 @@
-FROM node:22-slim
+# =============================================================================
+# Stage 1: Build the React/Vite frontend
+# =============================================================================
+FROM node:22-slim AS frontend-builder
 
-# Install git (required for git worktree operations)
+WORKDIR /app/frontend
+
+COPY frontend/package*.json ./
+RUN npm ci
+
+COPY frontend/ ./
+# Outputs to ../dist/frontend (vite.config.ts: outDir: "../dist/frontend")
+RUN npm run build
+
+
+# =============================================================================
+# Stage 2: Compile TypeScript + install production deps (needs build tools for
+# better-sqlite3 native bindings)
+# =============================================================================
+FROM node:22-slim AS backend-builder
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
+    python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 
-# Install Claude Code CLI
+WORKDIR /app
+
+COPY package*.json tsconfig.json ./
+RUN npm ci
+
+COPY src/ ./src/
+RUN npx tsc
+
+# Prune devDeps in-place — compiled native modules stay intact
+RUN npm prune --omit=dev
+
+
+# =============================================================================
+# Stage 3: Runtime — Claude Code agent + Express orchestration server
+# =============================================================================
+FROM node:22-slim AS runtime
+
+# git is required for worktree operations
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+# Install Claude Code CLI globally
 RUN npm install -g @anthropic-ai/claude-code
 
-# Install agent plugins
-RUN claude plugin install superpowers \
- && claude plugin install frontend-design@claude-plugins-official \
- && claude plugin install typescript-lsp \
- && claude plugin install security-guidance
+# Bundle plugins and skills directly — no marketplace auth needed at build time
+COPY docker/claude/plugins /root/.claude/plugins
+COPY docker/claude/skills  /root/.claude/skills
 
-# Write Claude Code runtime config directly into the image.
-# These files are NOT in the source repo — they belong to the Cloud Run environment only.
+# Write Claude Code runtime config directly into the image
 RUN mkdir -p /root/.claude/agents
 
 RUN cat > /root/.claude/settings.json <<'EOF'
 {
   "permissions": {
     "allow": [
-      "Bash(npm run build)",
-      "Bash(npm run lint)",
-      "Bash(npm run test*)",
-      "Bash(npx tsc --noEmit)",
-      "Bash(git status)",
-      "Bash(git diff*)",
-      "Bash(git log*)",
-      "Bash(git add*)",
-      "Bash(git commit*)",
-      "Bash(git branch*)",
-      "Bash(git worktree*)"
+      "Bash(git *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(mkdir *)",
+      "Bash(mv *)",
+      "Bash(cp *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(find *)",
+      "Bash(grep *)",
+      "Bash(touch *)",
+      "Bash(chmod *)"
     ],
     "deny": [
       "Bash(git push*)",
-      "Bash(rm -rf*)",
-      "Bash(curl*)",
-      "Bash(wget*)"
+      "Bash(rm -rf /*)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(ssh *)",
+      "Bash(sudo *)"
     ]
   }
 }
@@ -93,23 +135,27 @@ EOF
 
 WORKDIR /app
 
-# Ensure the data directory exists so SQLite can write the DB file on first run.
+# Production node_modules (pre-built native modules from backend-builder)
+COPY --from=backend-builder /app/node_modules ./node_modules
+
+# Compiled backend from Stage 2
+COPY --from=backend-builder /app/dist ./dist
+
+# Built frontend SPA served as static files by Express
+COPY --from=frontend-builder /app/dist/frontend ./dist/frontend
+
+# Needed by Node to resolve ESM ("type": "module")
+COPY package.json ./
+
+# SQLite database directory — mount a volume here for persistence
 RUN mkdir -p /app/data
 
-# Install Node dependencies (production only)
-COPY package*.json ./
-RUN npm ci --omit=dev
-
-# Copy and build frontend
-COPY frontend/package*.json ./frontend/
-RUN cd frontend && npm ci
-COPY frontend/ ./frontend/
-RUN npm run build:frontend
-
-# Copy compiled output
-COPY dist/ ./dist/
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 ENV NODE_ENV=production
+ENV PORT=8080
+
 EXPOSE 8080
 
-CMD ["node", "dist/server.js"]
+ENTRYPOINT ["/entrypoint.sh"]
