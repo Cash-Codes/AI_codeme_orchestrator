@@ -1,0 +1,12 @@
+node_modules/
+frontend/node_modules/
+dist/
+.env
+data/
+!data/.gitkeep
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
+coverage/
+claude-credentials.json
